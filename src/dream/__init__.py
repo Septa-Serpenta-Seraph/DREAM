@@ -1,7 +1,9 @@
-"""DREAM — Daemon Memory Reorganization Engine.
+"""[DREAM] — Daemon Memory Reorganization Engine.
 
 Implements 'dreaming' for AI agent memory: reviewing, reorganizing,
 correcting, and pruning stored memories during idle periods.
+
+A Serpentic system. Part of the Narusya daemon architecture.
 
 Inspired by:
 - Anthropic's dreaming research (memory consolidation during idle time)
