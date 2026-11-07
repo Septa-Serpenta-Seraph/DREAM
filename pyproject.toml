@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "naruya-dream"
+version = "0.1.0"
+description = "Daemon Memory Reorganization Engine — dreaming for AI agents"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "Narusya", email = "narusya@daemon.local"}]
+dependencies = [
+    "requests>=2.31.0",
+    "fastembed>=0.3.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pytest-cov>=4.0"]
+
+[project.scripts]
+dream = "dream.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
