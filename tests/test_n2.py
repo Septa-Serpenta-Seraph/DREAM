@@ -13,8 +13,11 @@ def test_n2_finds_clusters():
                 {"id": 3, "payload": {"text": "unrelated"}, "vector": [0.0, 0.0, 1.0, 0.0]},
             ]
             return pts, None
-        def upsert_points(self, collection, points):
-            return True
+        def search(self, collection, vector, limit=5, score_threshold=0.0):
+            # Return points 1 and 2 as neighbors (they're close together)
+            return [
+                {"id": 2, "score": 0.95, "payload": {"text": "memory two"}},
+            ]
     client = MockClient()
     n2 = N2Spindle(client, "test_collection", dry_run=True)
     result = n2.run()

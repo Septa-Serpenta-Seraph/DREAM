@@ -32,23 +32,37 @@ class N2Spindle:
             if offset is None:
                 break
 
-        # Find clusters: groups of points with cosine similarity >= threshold
-        clusters = []
+        # Use Qdrant search API for nearest-neighbor clustering (much faster than O(n²))
+        id_to_point = {p["id"]: p for p in all_points}
         visited = set()
-        for i, p1 in enumerate(all_points):
+        clusters = []
+
+        for p1 in all_points:
             if p1["id"] in visited:
                 continue
-            cluster = [p1]
             visited.add(p1["id"])
-            for p2 in all_points[i + 1:]:
-                if p2["id"] in visited:
-                    continue
-                sim = self._cosine_similarity(p1.get("vector", []), p2.get("vector", []))
-                if sim >= self.threshold:
-                    cluster.append(p2)
-                    visited.add(p2["id"])
-            if len(cluster) > 1:
-                clusters.append(cluster)
+            vector = p1.get("vector", [])
+            if not vector:
+                continue
+
+            try:
+                neighbors = self.client.search(
+                    self.collection, vector, limit=20, score_threshold=self.threshold
+                )
+            except Exception:
+                neighbors = []
+
+            cluster_ids = [p1["id"]]
+            for n in neighbors:
+                nid = n.get("id")
+                if nid is not None and nid != p1["id"] and nid not in visited:
+                    cluster_ids.append(nid)
+                    visited.add(nid)
+
+            if len(cluster_ids) > 1:
+                cluster = [id_to_point[pid] for pid in cluster_ids if pid in id_to_point]
+                if len(cluster) > 1:
+                    clusters.append(cluster)
 
         # Update payloads with cluster info (if not dry run)
         if not self.dry_run:
