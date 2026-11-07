@@ -5,6 +5,8 @@ from dream.phases.n1_consolidation import N1Consolidation
 from dream.phases.n2_spindle import N2Spindle
 from dream.phases.n3_pruning import N3Pruning
 from dream.phases.n4_rem import N4REM
+from dream.phases.storyweave import Storyweave
+from dream.memory_file import MemoryFile
 
 try:
     from dream.embedder import FastEmbedEmbedder
@@ -12,7 +14,7 @@ except Exception:  # pragma: no cover
     FastEmbedEmbedder = None
 
 
-PHASE_ORDER = ["n1", "n2", "n3", "rem"]
+PHASE_ORDER = ["n1", "n2", "n3", "rem", "storyweave"]
 
 
 class DreamEngine:
@@ -27,6 +29,7 @@ class DreamEngine:
         dry_run=False,
         max_age_days=90,
         similarity_threshold=0.85,
+        memory_file_path=None,
         **kwargs,
     ):
         if hasattr(qdrant_url, "scroll_points"):
@@ -50,6 +53,8 @@ class DreamEngine:
         self.dry_run = bool(dry_run)
         self.max_age_days = max_age_days
         self.similarity_threshold = similarity_threshold
+        self.memory_file_path = memory_file_path
+        self.memory_file = MemoryFile(memory_file_path) if memory_file_path else None
 
         self.fastembed_python = fastembed_python
         self.fastembed_script = fastembed_script
@@ -71,9 +76,13 @@ class DreamEngine:
         out = []
         for p in phases:
             name = str(p).lower().strip()
-            if name == "n4":
+            if name in ("n4",):
                 name = "rem"
-            if name in PHASE_ORDER:
+            if name in ("sw", "story"):
+                name = "storyweave"
+            if name in ("mf", "memory-file", "memoryfile"):
+                name = "memoryfile"
+            if name in PHASE_ORDER or name == "memoryfile":
                 out.append(name)
         if not out:
             out = list(PHASE_ORDER)
@@ -82,21 +91,49 @@ class DreamEngine:
     def _run_phase(self, name):
         if name == "n1":
             phase = N1Consolidation(self.client, self.collection, dry_run=self.dry_run)
+            return phase.run()
         elif name == "n2":
             phase = N2Spindle(
                 self.client, self.collection, dry_run=self.dry_run,
                 similarity_threshold=self.similarity_threshold,
             )
+            return phase.run()
         elif name == "n3":
             phase = N3Pruning(
                 self.client, self.collection, max_age_days=self.max_age_days,
                 dry_run=self.dry_run,
             )
+            return phase.run()
         elif name == "rem":
             phase = N4REM(self.client, self.collection, dry_run=self.dry_run)
+            return phase.run()
+        elif name == "storyweave":
+            phase = Storyweave(self.client, self.collection, dry_run=self.dry_run)
+            phase_results = getattr(self, "_current_phase_results", {})
+            return phase.weave(phase_results)
+        elif name == "memoryfile":
+            return self._run_memoryfile_phase()
         else:
             raise ValueError(f"Unknown phase: {name}")
-        return phase.run()
+
+    def _run_memoryfile_phase(self):
+        """Consolidate MEMORY.md entries."""
+        if self.memory_file is None:
+            return {"phase": "memoryfile", "status": "skipped", "reason": "no memory file path configured"}
+        entries = self.memory_file.parse_entries()
+        original_count = len(entries)
+        consolidated = self.memory_file.consolidate(entries)
+        removed = original_count - len(consolidated)
+        if not self.dry_run:
+            self.memory_file.write(consolidated)
+        return {
+            "phase": "memoryfile",
+            "entries_before": original_count,
+            "entries_after": len(consolidated),
+            "duplicates_removed": removed,
+            "char_count": self.memory_file.get_char_count(),
+            "dry_run": self.dry_run,
+        }
 
     def dream(self, phases=None):
         phase_names = self._normalize_phases(phases)
@@ -110,8 +147,12 @@ class DreamEngine:
         report["phase_results"] = report["results"]
         report["phase_reports"] = report["results"]
 
+        phase_results = {}
         for name in phase_names:
+            if name == "storyweave":
+                self._current_phase_results = phase_results
             result = self._run_phase(name)
+            phase_results[name] = result
             report["phases_run"].append(name)
             report["phases"][name] = result
             report["results"].append(result)

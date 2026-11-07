@@ -25,9 +25,9 @@ def test_engine_runs_all_phases():
     engine = DreamEngine(client=client, collection="test_collection", dry_run=True)
     report = engine.dream()
 
-    assert report["phases_run"] == ["n1", "n2", "n3", "rem"]
-    assert set(report["phases"].keys()) == {"n1", "n2", "n3", "rem"}
-    assert len(report["results"]) == 4
+    assert report["phases_run"] == ["n1", "n2", "n3", "rem", "storyweave"]
+    assert set(report["phases"].keys()) == {"n1", "n2", "n3", "rem", "storyweave"}
+    assert len(report["results"]) == 5
     for result in report["results"]:
         assert "phase" in result
 
