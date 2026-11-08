@@ -19,6 +19,10 @@ def main():
                         help="Path to fastembed daemon script")
     parser.add_argument("--report-file", default=None, help="Path to write JSON report")
     parser.add_argument("--memory-file", default=None, help="Path to MEMORY.md file for consolidation")
+    parser.add_argument("--dream-collection", default=None,
+                        help="Dream journal collection: the ONLY collection DREAM writes to. "
+                             "The memory archive is read-only. Artifacts (cluster maps, "
+                             "duplicate/stale reports, narratives) are appended here.")
     parser.add_argument("--dry-run", action="store_true", help="Report only, don't modify")
     args = parser.parse_args()
 
@@ -33,6 +37,7 @@ def main():
         fastembed_python=args.fastembed_python,
         fastembed_script=args.fastembed_script,
         memory_file_path=args.memory_file,
+        dream_collection=args.dream_collection,
         dry_run=args.dry_run,
     )
 

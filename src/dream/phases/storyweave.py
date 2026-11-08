@@ -31,10 +31,11 @@ class Storyweave:
 
     COLORS = ["emerald", "violet", "gold", "crimson", "silver", "azure"]
 
-    def __init__(self, client, collection, dry_run=False):
+    def __init__(self, client, collection, dry_run=False, dream_store=None):
         self.client = client
         self.collection = collection
         self.dry_run = dry_run
+        self.dream_store = dream_store
 
     def _gather_salient(self, limit=20):
         """Gather the most recent/salient memories for the narrative."""
@@ -106,10 +107,23 @@ class Storyweave:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         story += f"\n\n— woven at {now}, from {total} salient memories"
 
-        return {
+        result = {
             "phase": "storyweave",
             "story": story,
             "memories_sampled": total,
             "role_distribution": role_counts,
+            "archive_modified": False,
             "dry_run": self.dry_run,
         }
+
+        # The narrative is journaled, not written into the memory archive.
+        # Past dreams become searchable dreams of their own.
+        if self.dream_store is not None:
+            result["artifact_id"] = self.dream_store.write_artifact(
+                "storyweave",
+                f"dream woven from {total} memories",
+                story,
+                {"collection": self.collection, "role_distribution": role_counts},
+            )
+
+        return result

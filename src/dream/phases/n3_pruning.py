@@ -4,11 +4,12 @@ from datetime import datetime, timezone, timedelta
 
 
 class N3Pruning:
-    def __init__(self, client, collection, max_age_days=90, dry_run=False):
+    def __init__(self, client, collection, max_age_days=90, dry_run=False, dream_store=None):
         self.client = client
         self.collection = collection
         self.max_age_days = max_age_days
         self.dry_run = dry_run
+        self.dream_store = dream_store
 
     def _parse_timestamp(self, ts):
         if not ts:
@@ -50,7 +51,7 @@ class N3Pruning:
 
         # REPORT ONLY — never modify, never archive, never delete
         # The human decides what to do with stale memories
-        return {
+        result = {
             "phase": "n3",
             "points_reviewed": len(all_points),
             "stale_found": len(stale_ids),
@@ -58,5 +59,20 @@ class N3Pruning:
             "stale_archived": 0,  # Never archive — report only
             "stale_removed": 0,  # Never remove — report only
             "dry_run": True,  # Always report-only
+            "archive_modified": False,
             "note": "N3 is report-only. No modifications made. Human decides.",
         }
+
+        if self.dream_store is not None and stale_entries:
+            artifact_text = "\n".join(
+                f"{e['id']} (last seen {e['timestamp']}): {e['text']}"
+                for e in stale_entries[:50]
+            )
+            result["artifact_id"] = self.dream_store.write_artifact(
+                "n3_stale",
+                f"{len(stale_ids)} stale memories reported",
+                artifact_text,
+                {"collection": self.collection},
+            )
+
+        return result

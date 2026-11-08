@@ -1,6 +1,7 @@
 """DreamEngine orchestrator for the DREAM system."""
 
 from dream.qdrant_client import QdrantClient
+from dream.dream_store import DreamStore
 from dream.phases.n1_consolidation import N1Consolidation
 from dream.phases.n2_spindle import N2Spindle
 from dream.phases.n3_pruning import N3Pruning
@@ -30,6 +31,7 @@ class DreamEngine:
         max_age_days=90,
         similarity_threshold=0.85,
         memory_file_path=None,
+        dream_collection=None,
         **kwargs,
     ):
         if hasattr(qdrant_url, "scroll_points"):
@@ -62,6 +64,12 @@ class DreamEngine:
         if fastembed_python and fastembed_script and FastEmbedEmbedder is not None:
             self.embedder = FastEmbedEmbedder(fastembed_python, fastembed_script)
 
+        # The dream journal: the ONLY collection DREAM writes to.
+        # The memory archive is read-only to every phase.
+        self.dream_store = None
+        if dream_collection:
+            self.dream_store = DreamStore(self.client, dream_collection, self.embedder)
+
         for key, value in kwargs.items():
             setattr(self, key, value)
 
@@ -90,25 +98,29 @@ class DreamEngine:
 
     def _run_phase(self, name):
         if name == "n1":
-            phase = N1Consolidation(self.client, self.collection, dry_run=self.dry_run)
+            phase = N1Consolidation(self.client, self.collection, dry_run=self.dry_run,
+                                    dream_store=self.dream_store)
             return phase.run()
         elif name == "n2":
             phase = N2Spindle(
                 self.client, self.collection, dry_run=self.dry_run,
                 similarity_threshold=self.similarity_threshold,
+                dream_store=self.dream_store,
             )
             return phase.run()
         elif name == "n3":
             phase = N3Pruning(
                 self.client, self.collection, max_age_days=self.max_age_days,
                 dry_run=self.dry_run,
+                dream_store=self.dream_store,
             )
             return phase.run()
         elif name == "rem":
             phase = N4REM(self.client, self.collection, dry_run=self.dry_run)
             return phase.run()
         elif name == "storyweave":
-            phase = Storyweave(self.client, self.collection, dry_run=self.dry_run)
+            phase = Storyweave(self.client, self.collection, dry_run=self.dry_run,
+                               dream_store=self.dream_store)
             phase_results = getattr(self, "_current_phase_results", {})
             return phase.weave(phase_results)
         elif name == "memoryfile":
@@ -140,6 +152,7 @@ class DreamEngine:
         report = {
             "collection": self.collection,
             "dry_run": self.dry_run,
+            "archive_modified": False,
             "phases_run": [],
             "phases": {},
             "results": [],
@@ -157,6 +170,11 @@ class DreamEngine:
             report["phases"][name] = result
             report["results"].append(result)
             report[name] = result
+
+        # Journal status is captured AFTER all phases run (a pre-loop snapshot
+        # would always report zero artifacts — caught by the engine test)
+        if self.dream_store is not None:
+            report["dream_store"] = self.dream_store.status()
 
         return report
 
