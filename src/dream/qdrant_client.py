@@ -54,6 +54,11 @@ class QdrantClient:
             return result["result"]
         return []
 
+    def create_collection(self, name, size=384, distance="Cosine"):
+        body = {"vectors": {"size": size, "distance": distance}}
+        result = self._request("PUT", f"/collections/{name}", body)
+        return result is not None
+
     def upsert_points(self, collection, points):
         body = {"points": points}
         result = self._request("PUT", f"/collections/{collection}/points?wait=true", body)
