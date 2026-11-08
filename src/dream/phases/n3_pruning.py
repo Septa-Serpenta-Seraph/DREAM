@@ -38,17 +38,32 @@ class N3Pruning:
         cutoff = datetime.now(timezone.utc) - timedelta(days=self.max_age_days)
         stale_ids = []
         for p in all_points:
+            # Skip already-archived memories
+            if p.get("payload", {}).get("archived"):
+                continue
             ts = self._parse_timestamp(p.get("payload", {}).get("timestamp"))
             if ts and ts < cutoff:
                 stale_ids.append(p["id"])
 
+        # ARCHIVE, never delete — tag as archived and preserve
         if not self.dry_run and stale_ids:
-            self.client.delete_points(self.collection, stale_ids)
+            for pid in stale_ids:
+                p = next((pt for pt in all_points if pt["id"] == pid), None)
+                if p:
+                    payload = dict(p.get("payload", {}) or {})
+                    payload["archived"] = True
+                    payload["archived_at"] = datetime.now(timezone.utc).isoformat()
+                    self.client.upsert_points(self.collection, [{
+                        "id": p["id"],
+                        "vector": p.get("vector", []),
+                        "payload": payload,
+                    }])
 
         return {
             "phase": "n3",
             "points_reviewed": len(all_points),
             "stale_found": len(stale_ids),
-            "stale_removed": len(stale_ids) if not self.dry_run else 0,
+            "stale_archived": len(stale_ids) if not self.dry_run else 0,
+            "stale_removed": 0,  # Never remove — archive only
             "dry_run": self.dry_run,
         }
