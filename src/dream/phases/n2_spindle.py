@@ -1,22 +1,21 @@
-"""N2 — Spindle: connect new memories to existing ones, find patterns."""
+"""N2 — Spindle: find clusters of related memories.
 
-import math
+READ-ONLY toward the archive. N2 discovers clusters of similar memories using
+Qdrant's search API (not O(n²) pairwise comparison). It never tags, modifies,
+or writes back to the memory collection — cluster maps are appended to the
+dream journal (see DreamStore) where they are searchable alongside the
+memories they describe.
+"""
 
 
 class N2Spindle:
-    def __init__(self, client, collection, dry_run=False, similarity_threshold=0.85):
+    def __init__(self, client, collection, dry_run=False, similarity_threshold=0.85,
+                 dream_store=None):
         self.client = client
         self.collection = collection
         self.dry_run = dry_run
         self.threshold = similarity_threshold
-
-    def _cosine_similarity(self, a, b):
-        dot = sum(x * y for x, y in zip(a, b))
-        norm_a = math.sqrt(sum(x * x for x in a))
-        norm_b = math.sqrt(sum(x * x for x in b))
-        if norm_a == 0 or norm_b == 0:
-            return 0.0
-        return dot / (norm_a * norm_b)
+        self.dream_store = dream_store
 
     def run(self):
         all_points = []
@@ -64,24 +63,32 @@ class N2Spindle:
                 if len(cluster) > 1:
                     clusters.append(cluster)
 
-        # Update payloads with cluster info (if not dry run)
-        if not self.dry_run:
-            for ci, cluster in enumerate(clusters):
-                for p in cluster:
-                    payload = dict(p.get("payload", {}) or {})
-                    payload["cluster_id"] = ci
-                    payload["cluster_size"] = len(cluster)
-                    payload["cluster_members"] = [m["id"] for m in cluster]
-                    self.client.upsert_points(self.collection, [{
-                        "id": p["id"],
-                        "vector": p.get("vector", []),
-                        "payload": payload,
-                    }])
-
-        return {
+        # Never write cluster tags back into the archive. The cluster map
+        # lives in the dream journal, additive only.
+        result = {
             "phase": "n2",
             "points_reviewed": len(all_points),
             "clusters_found": len(clusters),
             "clustered_points": sum(len(c) for c in clusters),
+            "archive_modified": False,
             "dry_run": self.dry_run,
         }
+
+        if self.dream_store is not None and clusters:
+            lines = []
+            cluster_maps = []
+            for ci, cluster in enumerate(clusters[:500]):
+                member_ids = [m["id"] for m in cluster]
+                sample = (cluster[0].get("payload", {}).get("text", "") or "")[:80]
+                lines.append(f"cluster {ci}: {len(cluster)} memories — {sample}")
+                cluster_maps.append({"cluster_id": ci, "size": len(cluster),
+                                     "members": member_ids})
+            artifact_id = self.dream_store.write_artifact(
+                "n2_clusters",
+                f"{len(clusters)} clusters over {result['clustered_points']} memories",
+                "\n".join(lines),
+                {"collection": self.collection, "clusters": cluster_maps},
+            )
+            result["artifact_id"] = artifact_id
+
+        return result
